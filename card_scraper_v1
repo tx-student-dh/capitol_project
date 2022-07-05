@@ -1,0 +1,146 @@
+import os
+import csv
+import time
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+import pytesseract as pyt
+import re
+import cv2
+
+def main():
+    pyt.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+    path = os.environ["USERPROFILE"] + "/Desktop/capitol_payroll_cards"
+    if not os.path.exists(path):
+        os.mkdir(path)
+    os.chdir(path)
+
+
+    s = Service('C:/Users/benja/Downloads/chromedriver_win32/chromedriver.exe')
+
+    chrome_options = webdriver.ChromeOptions()
+    chrome_options.headless = True
+    driver = webdriver.Chrome(service=s, options=chrome_options)
+
+    driver.get("https://tsl.access.preservica.com/uncategorized/IO_69156e0b-0564-4b82-9b91-3f1b5380d595/?view=gallery")
+
+
+    with open("payroll_cards5.csv", "w", newline="") as file:                                                                                        #create a new .csv file
+        writer = csv.writer(file, delimiter = ",", quoting=csv.QUOTE_NONE)
+
+        top_row = ["last_name", "first_name", "occupation", "pay_roll", "year"]
+        writer.writerow(top_row)
+
+        b = driver.find_element(By.CLASS_NAME, "pres-next-button")
+
+        b.click()
+
+        time.sleep(3)
+
+        window_after = driver.window_handles[0]
+        driver.switch_to.window(window_after)
+        driver.set_window_size(1920, 5000)
+
+        #checker = 0
+
+        while(True):
+            try:
+                full = driver.find_element(By.TAG_NAME, "iframe")
+                full.screenshot("test.png")
+
+
+                img = cv2.imread("test.png")
+                cfg = r'--oem 3 --psm 6'
+
+
+                processed_img = cv2.cvtColor(img[100:400, 100:800], cv2.COLOR_RGB2GRAY)
+
+                processed_img = cv2.adaptiveThreshold(processed_img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, 20)
+
+
+
+                txt = pyt.image_to_string(processed_img, config=cfg)
+
+
+                card = re.sub(r'\n+', '\n', txt).split('\n')
+
+                remove_blanks(card)
+
+                name = card[0].split(" ")
+                remove_blanks(name)
+
+                lname = clean(name[0])
+                fname = clean(name[1])
+                occupation = clean(card[1])
+                roll = clean(card[2])
+                loc = -2
+
+                if(lname == ""):
+                    lname = fname
+                    fname = ""
+
+                try:
+                    loc = roll.index("Roll")
+                except:
+                    loc = -1
+                if(loc == -1):
+                    if("Capitol" in roll[:10]):
+                        collection = "Capitol"
+                    elif ("Rail" in roll[:10]):
+                        collection = "Rail Road"
+                    else:
+                        loc = roll.index("R")
+                        collection = roll[:loc]
+                else:
+                    collection = roll[:loc]
+                year = "188"
+
+                if(re.search(r'\d+', roll)):
+                    last = re.search(r'\d{4}', roll).group(0)[-1]
+                    year = year + last
+                else:
+                    last = re.search(r'\d{4}', card[3]).group(0)[-1]
+                    year = year + last
+
+
+                row = [lname, fname, occupation, collection, year]
+                print(row)
+                writer.writerow(row)
+                file.flush()
+
+                b.click()
+
+                time.sleep(10)
+
+                window_after = driver.window_handles[0]
+                driver.switch_to.window(window_after)
+                driver.set_window_size(1920, 5000)
+
+
+            except:
+                try:
+
+
+                    b.click()
+
+                    time.sleep(10)
+
+                    window_after = driver.window_handles[0]
+                    driver.switch_to.window(window_after)
+                    driver.set_window_size(1920, 5000)
+
+                    #checker += 1
+
+                    continue
+                except:
+                    break
+
+
+def remove_blanks(arr):
+    while("" in arr):
+        arr.remove("")
+
+def clean(s):
+    return re.sub(r'[^A-Za-z\d ]', '', s.strip())
+
+main()
